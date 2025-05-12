@@ -1,0 +1,274 @@
+---
+title: "Untitled"
+output: html_document
+date: "2025-03-31"
+---
+
+```{r}
+# https://www.statmodel.com/RI-CLPM.shtml
+
+library(pacman)
+p_load(MASS, tidyverse, powRICLPM, lavaan)
+
+```
+
+
+simulating data
+
+```{r}
+# number of persons in the simulated data
+n_persons = 200
+
+df_list <- list()
+
+# setting values for simulation
+a = 5 # influence of x_n on x_n+1
+b = 0.5 # influence of y_n on y_n+1
+  
+c = 1 # influence of x_n on y_n+1
+d = -10 # influence of y_n on x_n+1
+
+for (i in 1:n_persons) {
+  RIx <- rnorm(1, mean = -1, sd = 1)
+  RIy <- rnorm(1, mean = 1, sd = 1)
+  
+  # wave 1
+  wx1 = rnorm(1, mean = 0, sd = 1)
+  wy1 = rnorm(1, mean = 0, sd = 1)
+  
+  x1 <- rnorm(1, mean = RIx + wx1, sd = 1)
+  y1 <- rnorm(1, mean = RIy + wy1, sd = 1)
+  
+  # wave 2
+  wx2 = a * wx1 + c * wy1
+  wy2 = b * wy1 + d * wx1
+  
+  x2 <- rnorm(1, mean = RIx + wx2, sd = 1)
+  y2 <- rnorm(1, mean = RIy + wy2, sd = 1)
+  
+  # wave 3
+  wx3 = a * wx2 + c * wy2
+  wy3 = b * wy2 + d * wx2
+  
+  x3 <- rnorm(1, mean = RIy + wx3, sd = 1)
+  y3 <- rnorm(1, mean = RIy + wy3, sd = 1)
+  
+  # wave 4
+  wx4 = a * wx3 + c * wy3
+  wy4 = b * wy3 + d * wx3
+  
+  x4 <- rnorm(1, mean = RIy + wx4, sd = 1)
+  y4 <- rnorm(1, mean = RIy + wy4, sd = 1)
+  
+  # wave 5
+  wx5 = a * wx4 + c * wy4
+  wy5 = b * wy4 + d * wx4
+  
+  x5 <- rnorm(1, mean = RIy + wx5, sd = 1)
+  y5 <- rnorm(1, mean = RIy + wy5, sd = 1)
+  
+    
+  df_list[[i]] <- data.frame(
+    x1 = x1,
+    y1 = y1,
+    x2 = x2,  
+    y2 = y2, 
+    x3 = x3,  
+    y3 = y3,
+    x4 = x4,  
+    y4 = y4,
+    x5 = x5,  
+    y5 = y5
+  )
+  }
+
+# bind to a single dataframe
+df <- do.call(rbind, df_list)
+
+```
+
+
+following the time-constrained model from: https://jeroendmulder.github.io/RI-CLPM/lavaan.html
+
+```{r}
+RICLPM5 <- '
+  # Create between components (random intercepts)
+  RIx =~ 1*x1 + 1*x2 + 1*x3 + 1*x4 + 1*x5
+  RIy =~ 1*y1 + 1*y2 + 1*y3 + 1*y4 + 1*y5
+  
+  # Create within-person centered variables
+  wx1 =~ 1*x1
+  wx2 =~ 1*x2
+  wx3 =~ 1*x3 
+  wx4 =~ 1*x4 
+  wx5 =~ 1*x5
+  
+  wy1 =~ 1*y1
+  wy2 =~ 1*y2
+  wy3 =~ 1*y3
+  wy4 =~ 1*y4
+  wy5 =~ 1*y5
+  
+  # Estimate lagged effects between within-person centered variables 
+  # (constrained)
+  wx2 ~ a*wx1 + c*wy1 
+  wy2 ~ b*wy1 + d*wx1
+  
+  wx3 ~ a*wx2 + c*wy2 
+  wy3 ~ b*wy2 + d*wx2
+  
+  wx4 ~ a*wx3 + c*wy3 
+  wy4 ~ b*wy3 + d*wx3
+  
+  wx5 ~ a*wx4 + c*wy4 
+  wy5 ~ b*wy4 + d*wx4
+  
+  
+  # Estimate covariances between residuals of within-person centered variables 
+  # (i.e., innovations, constrained)
+  wx2 ~~ cov*wy2
+  wx3 ~~ cov*wy3
+  wx4 ~~ cov*wy4
+  wx5 ~~ cov*wy5
+  
+  # Estimate covariance between within-person centered variables at first wave
+  wx1 ~~ wy1 # Covariance
+  
+  # Estimate variance and covariance of random intercepts
+  RIx ~~ RIx
+  RIy ~~ RIy
+  #RIx ~~ RIy
+  
+  # Estimate (residual) variance of within-person centered variables 
+  # (constrained)
+  wx1 ~~ wx1 # Variance
+  wy1 ~~ wy1 
+  wx2 ~~ vx*wx2 # Residual variance
+  wy2 ~~ vy*wy2 
+  wx3 ~~ vx*wx3 
+  wy3 ~~ vy*wy3 
+  wx4 ~~ vx*wx4
+  wy4 ~~ vy*wy4 
+  wx5 ~~ vx*wx5
+  wy5 ~~ vy*wy5 
+'
+
+RICLPM3 <- '
+  # Create between components (random intercepts)
+  RIx =~ 1*x1 + 1*x2 + 1*x3
+  RIy =~ 1*y1 + 1*y2 + 1*y3
+  
+  # Create within-person centered variables
+  wx1 =~ 1*x1
+  wx2 =~ 1*x2
+  wx3 =~ 1*x3 
+  
+  wy1 =~ 1*y1
+  wy2 =~ 1*y2
+  wy3 =~ 1*y3
+  
+  # Estimate lagged effects between within-person centered variables 
+  # (constrained)
+  wx2 ~ a*wx1 + c*wy1 
+  wy2 ~ b*wy1 + d*wx1
+  
+  wx3 ~ a*wx2 + c*wy2 
+  wy3 ~ b*wy2 + d*wx2
+  
+  
+  # Estimate covariances between residuals of within-person centered variables 
+  # (i.e., innovations, constrained)
+  wx2 ~~ cov*wy2
+  wx3 ~~ cov*wy3
+  
+  # Estimate covariance between within-person centered variables at first wave
+  wx1 ~~ wy1 # Covariance
+  
+  # Estimate variance and covariance of random intercepts
+  RIx ~~ RIx
+  RIy ~~ RIy
+  #RIx ~~ RIy
+  
+  # Estimate (residual) variance of within-person centered variables 
+  # (constrained)
+  wx1 ~~ wx1 # Variance
+  wy1 ~~ wy1 
+  wx2 ~~ vx*wx2 # Residual variance
+  wy2 ~~ vy*wy2 
+  wx3 ~~ vx*wx3 
+  wy3 ~~ vy*wy3 
+'
+
+RICLPM2 <- '
+  # Create between components (random intercepts)
+  RIx =~ 1*x1 + 1*x2 
+  RIy =~ 1*y1 + 1*y2 
+  
+  # Create within-person centered variables
+  wx1 =~ 1*x1
+  wx2 =~ 1*x2
+  
+  wy1 =~ 1*y1
+  wy2 =~ 1*y2
+  
+  # Estimate lagged effects between within-person centered variables 
+  # (constrained)
+  wx2 ~ a*wx1 + c*wy1 
+  wy2 ~ b*wy1 + d*wx1
+  
+  
+  # Estimate covariances between residuals of within-person centered variables 
+  # (i.e., innovations, constrained)
+  wx2 ~~ cov*wy2
+  
+  # Estimate covariance between within-person centered variables at first wave
+  wx1 ~~ wy1 # Covariance
+  
+  # Estimate variance and covariance of random intercepts
+  RIx ~~ RIx
+  RIy ~~ RIy
+  #RIx ~~ RIy
+  
+  # Estimate (residual) variance of within-person centered variables 
+  # (constrained)
+  wx1 ~~ wx1 # Variance
+  wy1 ~~ wy1 
+  wx2 ~~ vx*wx2 # Residual variance
+  wy2 ~~ vy*wy2 
+'
+
+#simpler_fit <- sem(RICLPM5, data = df, missing = "ML")
+#summary(simpler_fit, standardized = TRUE)
+```
+
+
+```{r}
+
+RICLPM5.fit <- lavaan(RICLPM5, 
+  data = df, 
+  missing = 'ML', 
+  meanstructure = T, 
+  int.ov.free = T
+) 
+summary(RICLPM5.fit, standardized = T)
+
+RICLPM3.fit <- lavaan(RICLPM3, 
+  data = df, 
+  missing = 'ML', 
+  meanstructure = T, 
+  int.ov.free = T
+) 
+summary(RICLPM3.fit, standardized = T)
+
+RICLPM2.fit <- lavaan(RICLPM2, 
+  data = df, 
+  missing = 'ML', 
+  meanstructure = T, 
+  int.ov.free = T
+) 
+summary(RICLPM2.fit, standardized = T)
+
+
+```
+
+
